@@ -14,13 +14,13 @@ This package has been tested with:
 
 ## References
 
-Generic Event Delivery Using HTTP Push
+Generic Event Delivery Using HTTP Push:
 https://www.rfc-editor.org/rfc/rfc8030.html
 
-Message Encryption for Web Push
+Message Encryption for Web Push:
 https://www.rfc-editor.org/rfc/rfc8291.html
 
-Voluntary Application Server Identification (VAPID) for Web Push
+Voluntary Application Server Identification (VAPID) for Web Push:
 https://www.rfc-editor.org/rfc/rfc8292
 
 Encrypted Content-Encoding for HTTP:
