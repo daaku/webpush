@@ -14,26 +14,9 @@ This package has been tested with:
 
 ## References
 
-### Generic Event Delivery Using HTTP Push
-
-https://www.rfc-editor.org/rfc/rfc8030.html
-
-### Message Encryption for Web Push
-
-https://www.rfc-editor.org/rfc/rfc8291.html
-
-### Voluntary Application Server Identification (VAPID) for Web Push
-
-https://www.rfc-editor.org/rfc/rfc8292
-
-### Encrypted Content-Encoding for HTTP
-
-https://www.rfc-editor.org/rfc/rfc8188
-
-### MDN Push API
-
-https://developer.mozilla.org/en-US/docs/Web/API/Push_API
-
-### Apple Push Notification Documentation
-
-https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers
+- [RFC-8030: Generic Event Delivery Using HTTP Push](https://www.rfc-editor.org/rfc/rfc8030.html)
+- [RFC-8291: Message Encryption for Web Push](https://www.rfc-editor.org/rfc/rfc8291.html)
+- [RFC-8292: Voluntary Application Server Identification (VAPID) for Web Push](https://www.rfc-editor.org/rfc/rfc8292)
+- [RFC-8188: Encrypted Content-Encoding for HTTP](https://www.rfc-editor.org/rfc/rfc8188)
+- [MDN Push API](https://developer.mozilla.org/en-US/docs/Web/API/Push_API)
+- [Apple Push Notification Documentation](https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers)
