@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"time"
@@ -74,8 +75,16 @@ func run() error {
 
 	// schedule push notification to the given subscription
 	mux.HandleFunc("/push", func(w http.ResponseWriter, r *http.Request) {
+		rawJSON, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintln(w, err)
+			return
+		}
+		fmt.Fprintf(os.Stderr, "%s\n", rawJSON)
+
 		var sub webpush.Subscription
-		if err := json.NewDecoder(r.Body).Decode(&sub); err != nil {
+		if err := json.Unmarshal(rawJSON, &sub); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprintln(w, err)
 			return
@@ -85,15 +94,17 @@ func run() error {
 			msg, _ := json.Marshal(map[string]any{
 				"title": "Test push from WebPush Example",
 			})
-			_, err := webpush.Send(context.Background(), msg, &sub, &webpush.Config{
+			res, err := webpush.Send(context.Background(), msg, &sub, &webpush.Config{
 				Client:     http.DefaultClient,
 				VAPIDKey:   vapidKey,
-				Subscriber: "mailto:example@example.com",
+				Subscriber: "https://github.com/daaku/webpush",
 				TTL:        time.Hour,
 			})
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "webpush.Send error:", err)
 			}
+			defer res.Body.Close()
+			io.Copy(os.Stderr, res.Body)
 		}()
 	})
 
@@ -131,12 +142,37 @@ const indexHTML = `<!doctype html>
   <link rel="icon" type="image/png" href="/icon.png">
   <link rel="apple-touch-icon" type="image/png" href="/icon.png">
   <meta data-vapid-public-key="%s">
+  <style>
+  .status {
+    margin-block: 1rem;
+  }
+  #msg {
+    font-family: monospace;
+  }
+  .push-unavailable {
+    #controls {
+      display: none;
+    }
+    #msg::after {
+      color: lightcoral;
+      font-weight: bold;
+      content: "Push Unavailable. For iOS add the app to the home screen."
+    }
+  }
+  .push-granted .status::after {
+    color: lightseagreen;
+    content: "Push Permission Granted."
+  }
+  </style>
 </head>
 <body>
   <h1>WebPush Example</h1>
-  <button id="send-push">Subscribe & Schedule Push</button>
-  <button id="unsubscribe">Unsubscribe</button>
-  <pre id="msg"></pre>
+  <div id="controls">
+    <button id="send-push">Subscribe & Schedule Push</button>
+    <button id="unsubscribe">Unsubscribe</button>
+  </div>
+  <div class="status"></div>
+  <div id="msg"></div>
   <script src="/main.js"></script>
 </body>
 </html>
