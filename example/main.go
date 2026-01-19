@@ -17,9 +17,26 @@ import (
 	"github.com/daaku/webpush"
 )
 
-func run() error {
-	// In real use, this should be generated once and stored in config.
+// In real use, this should be generated once and stored in config.
+// Here for the example we generate and cache it.
+// A change in the VAPID key invalidates all your existing subscriptions.
+func vapidKey() (string, error) {
+	const vapidKeyCache = ".vapid.key"
+	if b, err := os.ReadFile(vapidKeyCache); err == nil {
+		return string(b), nil
+	}
 	vapidKeyPrivateB64, err := webpush.GenerateVAPIDKey()
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(vapidKeyCache, []byte(vapidKeyPrivateB64), 0o600); err != nil {
+		return "", err
+	}
+	return vapidKeyPrivateB64, nil
+}
+
+func run() error {
+	vapidKeyPrivateB64, err := vapidKey()
 	if err != nil {
 		return err
 	}
