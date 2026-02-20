@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/daaku/ensure v1.0.1
-	github.com/golang-jwt/jwt/v5 v5.3.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	golang.org/x/crypto v0.48.0
 )
 
