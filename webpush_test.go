@@ -295,9 +295,11 @@ func TestRealEndpoints(t *testing.T) {
 	config := Config{
 		Client:     http.DefaultClient,
 		Subscriber: "https://bento.daaku.org/",
-		VAPIDKey:   validVapidKey,
-		// VAPIDKey: must(ParseVAPIDKey("Npnu7ulDI0A5nvDXgrEreznX809sYVuIqEh7AXG2ook")),
-		TTL: 30 * time.Minute,
+		// TODO: using an invalid vapid key because the apple subscription isn't
+		// expiring. Will test again after a few weeks.
+		// VAPIDKey:   validVapidKey,
+		VAPIDKey: must(ParseVAPIDKey("Npnu7ulDI0A5nvDXgrEreznX809sYVuIqEh7AXG2ook")),
+		TTL:      30 * time.Minute,
 	}
 
 	type Notification struct {
