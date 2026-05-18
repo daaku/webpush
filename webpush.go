@@ -31,6 +31,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -54,6 +55,70 @@ const (
 	// header: 86 + padding: minimum 1 + AEAD_AES_128_GCM Expansion: 16
 	minOverhead = 103
 )
+
+// Error returned by Send when the Push Endpoint returns an error.
+type Error struct {
+	StatusCode int    // HTTP StatusCode from the Endpoint.
+	Body       []byte // Response Body from the Endpoint.
+	Message    string // A best-guess message describing the issue.
+
+	// EndpointHost contains the hostname as a helpful hint to debug
+	// errors. Often the combination of the Push Endpoint and message
+	// text together will lead to quicker diagnosis.
+	EndpointHost string
+
+	// A best-guess indicating if the error is permanent.
+	// The library tries to detect such errors from various well known
+	// Push Endpoint implementations used by popular User Agents.
+	Permanent bool
+
+	// Location header returned by Push Endpoint in case the subscription Endpoint
+	// needs to be updated.
+	Location string
+}
+
+// Error returns the error message.
+func (e *Error) Error() string {
+	return fmt.Sprintf("webpush: %s: %s", e.EndpointHost, e.Message)
+}
+
+var openCurly = []byte("{")
+
+func newError(endpoint string, res *http.Response, body []byte) *Error {
+	endpointHost := "<unknown-endpoint>"
+	u, err := url.Parse(endpoint)
+	if err == nil {
+		endpointHost = u.Hostname()
+	}
+
+	var msg string
+	switch {
+	case bytes.HasPrefix(body, openCurly):
+		var j struct {
+			Message string `json:"message"` // used by Mozilla
+			Reason  string `json:"reason"`  // used by Apple
+		}
+		_ = json.Unmarshal(body, &j)
+		msg = j.Message
+		if msg == "" {
+			msg = j.Reason
+		}
+	case strings.HasPrefix(res.Header.Get("Content-Type"), "text/plain"): // used by Google
+		msg = string(bytes.TrimSpace(body))
+	}
+	if msg == "" {
+		msg = fmt.Sprintf("error from push endpoint with status=%d", res.StatusCode)
+	}
+
+	return &Error{
+		StatusCode:   res.StatusCode,
+		Body:         body,
+		Message:      msg,
+		EndpointHost: endpointHost,
+		Permanent:    res.StatusCode == 404 || res.StatusCode == 410,
+		Location:     res.Header.Get("Location"),
+	}
+}
 
 // Urgency directly impacts battery life.
 //
@@ -215,83 +280,85 @@ var (
 )
 
 // Send a Push Notification to a Subscription.
-func Send(ctx context.Context, message []byte, s *Subscription, conf *Config) (*http.Response, error) {
+// Send will return an error of type Error if the Endpoint returns a HTTP
+// response with a status code outside the 200-299 range.
+func Send(ctx context.Context, message []byte, s *Subscription, conf *Config) error {
 	recordSize := conf.RecordSize
 	if recordSize == 0 {
 		recordSize = maxRecordSize
 	}
 
 	if s.Endpoint == "" || s.Keys.Auth == "" || s.Keys.P256dh == "" {
-		return nil, fmt.Errorf(
+		return fmt.Errorf(
 			"webpush: invalid subscription, missing endpoint or keys")
 	}
 
 	if len(message) > recordSize-minOverhead {
-		return nil, fmt.Errorf(
+		return fmt.Errorf(
 			"webpush: message length of %v is too long for record size of %v",
 			len(message), recordSize)
 	}
 
 	authSecret, err := b64Decode(s.Keys.Auth)
 	if err != nil {
-		return nil, fmt.Errorf("webpush: invalid auth in key: %w", err)
+		return fmt.Errorf("webpush: invalid auth in key: %w", err)
 	}
 
 	userAgentPublicKeyBytes, err := b64Decode(s.Keys.P256dh)
 	if err != nil {
-		return nil, fmt.Errorf("webpush: invalid public key: %w", err)
+		return fmt.Errorf("webpush: invalid public key: %w", err)
 	}
 
 	salt := make([]byte, 16)
 	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
-		return nil, err
+		return err
 	}
 
 	// New Key for this Message
 	appServerPrivateKey, err := ecdh.P256().GenerateKey(rand.Reader)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	appServerPublicKeyBytes := appServerPrivateKey.PublicKey().Bytes()
 
 	userAgentPublicKey, err := ecdh.P256().NewPublicKey(userAgentPublicKeyBytes)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Derive Shared Secret for this Message
 	sharedSecret, err := appServerPrivateKey.ECDH(userAgentPublicKey)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Derive IKM
 	keyInfo := slices.Concat(webPushInfo, userAgentPublicKeyBytes, appServerPublicKeyBytes)
 	ikm, err := hkdfExpand(32, sharedSecret, authSecret, keyInfo)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Derive Content Encryption Key
 	contentEncryptionKey, err := hkdfExpand(16, ikm, salt, contentEncryptionKeyInfo)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Derive Nonce
 	nonce, err := hkdfExpand(12, ikm, salt, nonceInfo)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// AES + GCM
 	aesCipher, err := aes.NewCipher(contentEncryptionKey)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	gcm, err := cipher.NewGCM(aesCipher)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Single allocation byte slice in which we write the header, message,
@@ -315,7 +382,7 @@ func Send(ctx context.Context, message []byte, s *Subscription, conf *Config) (*
 
 	req, err := http.NewRequest("POST", s.Endpoint, bytes.NewReader(record))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	req.Header.Set("Content-Encoding", "aes128gcm")
@@ -327,7 +394,7 @@ func Send(ctx context.Context, message []byte, s *Subscription, conf *Config) (*
 	}
 	if conf.Urgency != "" {
 		if !conf.Urgency.isValid() {
-			return nil, fmt.Errorf("webpush: invalid urgency %q", conf.Urgency)
+			return fmt.Errorf("webpush: invalid urgency %q", conf.Urgency)
 		}
 		req.Header.Set("Urgency", string(conf.Urgency))
 	}
@@ -344,9 +411,24 @@ func Send(ctx context.Context, message []byte, s *Subscription, conf *Config) (*
 		expiration,
 	)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	req.Header.Set("Authorization", authHeader)
 
-	return conf.Client.Do(req)
+	res, err := conf.Client.Do(req)
+	if err != nil {
+		return fmt.Errorf("webpush: error making request to subscription endpoint: %w", err)
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(res.Body, 4096))
+	if err != nil {
+		return fmt.Errorf("webpush: error reading response body from subscription endpoint: %w", err)
+	}
+
+	if res.StatusCode >= 200 && res.StatusCode <= 299 {
+		return nil
+	}
+
+	return newError(s.Endpoint, res, body)
 }

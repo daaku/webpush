@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"testing"
 	"testing/cryptotest"
@@ -147,7 +150,7 @@ func TestMakeAuthHeaderMissingSubscriber(t *testing.T) {
 
 func TestSendDefaultsSnapshot(t *testing.T) {
 	cryptotest.SetGlobalRandom(t, 42)
-	resp, err := Send(
+	err := Send(
 		context.Background(),
 		[]byte("Test"),
 		&validSubscription,
@@ -173,12 +176,11 @@ func TestSendDefaultsSnapshot(t *testing.T) {
 			VAPIDExpiration: goldTime,
 		})
 	ensure.Nil(t, err)
-	ensure.DeepEqual(t, resp.StatusCode, http.StatusCreated)
 }
 
 func TestSendTopic(t *testing.T) {
 	const topic = "a-test"
-	resp, err := Send(
+	err := Send(
 		context.Background(),
 		[]byte("test"),
 		&validSubscription,
@@ -195,12 +197,11 @@ func TestSendTopic(t *testing.T) {
 			Topic:      topic,
 		})
 	ensure.Nil(t, err)
-	ensure.DeepEqual(t, resp.StatusCode, http.StatusCreated)
 }
 
 func TestSendUrgency(t *testing.T) {
 	const urgency = UrgencyVeryLow
-	resp, err := Send(
+	err := Send(
 		context.Background(),
 		[]byte("test"),
 		&validSubscription,
@@ -217,11 +218,10 @@ func TestSendUrgency(t *testing.T) {
 			Urgency:    urgency,
 		})
 	ensure.Nil(t, err)
-	ensure.DeepEqual(t, resp.StatusCode, http.StatusCreated)
 }
 
 func TestSendErrorTooLongCustomRecordSize(t *testing.T) {
-	_, err := Send(
+	err := Send(
 		context.Background(),
 		[]byte("12"),
 		&validSubscription,
@@ -231,7 +231,7 @@ func TestSendErrorTooLongCustomRecordSize(t *testing.T) {
 }
 
 func TestSendErrorTooLongDefaultRecordSize(t *testing.T) {
-	_, err := Send(
+	err := Send(
 		context.Background(),
 		bytes.Repeat([]byte("1"), maxRecordSize),
 		&validSubscription,
@@ -241,7 +241,7 @@ func TestSendErrorTooLongDefaultRecordSize(t *testing.T) {
 }
 
 func TestSendErrorEmptySubscription(t *testing.T) {
-	_, err := Send(
+	err := Send(
 		context.Background(),
 		[]byte("1"),
 		&Subscription{},
@@ -253,7 +253,7 @@ func TestSendErrorEmptySubscription(t *testing.T) {
 func TestSendErrorInvalidAuthSecret(t *testing.T) {
 	sub := validSubscription
 	sub.Keys.Auth = "{}"
-	_, err := Send(
+	err := Send(
 		context.Background(),
 		[]byte("1"),
 		&sub,
@@ -265,7 +265,7 @@ func TestSendErrorInvalidAuthSecret(t *testing.T) {
 func TestSendErrorInvalidPublicKey(t *testing.T) {
 	sub := validSubscription
 	sub.Keys.P256dh = "{}"
-	_, err := Send(
+	err := Send(
 		context.Background(),
 		[]byte("1"),
 		&sub,
@@ -275,7 +275,7 @@ func TestSendErrorInvalidPublicKey(t *testing.T) {
 }
 
 func TestSendErrorInvalidUrgency(t *testing.T) {
-	_, err := Send(
+	err := Send(
 		context.Background(),
 		[]byte("test"),
 		&validSubscription,
@@ -286,4 +286,72 @@ func TestSendErrorInvalidUrgency(t *testing.T) {
 			Urgency:    Urgency("invalid"),
 		})
 	ensure.Err(t, err, regexp.MustCompile("invalid urgency"))
+}
+
+func TestRealEndpoints(t *testing.T) {
+	if os.Getenv("REAL_ENDPOINTS") == "" {
+		t.Skip("skipping testing real endpoints")
+	}
+	config := Config{
+		Client:     http.DefaultClient,
+		Subscriber: "https://bento.daaku.org/",
+		VAPIDKey:   validVapidKey,
+		// VAPIDKey: must(ParseVAPIDKey("Npnu7ulDI0A5nvDXgrEreznX809sYVuIqEh7AXG2ook")),
+		TTL: 30 * time.Minute,
+	}
+
+	type Notification struct {
+		Title string `json:"title"`
+		Body  string `json:"body"`
+		Data  any    `json:"data"`
+	}
+	msg, err := json.Marshal(Notification{
+		Title: "Bento Notification Test",
+		Body:  "This is a integration test push notification!",
+		Data:  map[string]string{"url": "/"},
+	})
+	ensure.Nil(t, err)
+
+	// these were generated using the above config
+	const expiredApple = `{
+  "endpoint": "https://web.push.apple.com/QC01kYdRpQOe1qvJ6hjhcGV3ccZ4tGq5D-H_Uy671ijCGAI-MPp83I6Jsc3MFYfQIZzfePLaQ9iEwiex0ADdVKETrQIsqUQU-xBC1yCysd1G2BDfQ7BhCT6OeEo3ni6-wbYTBWO0ZLuBGVe4urAg14xFPIDERQReHC5WRxUIpus",
+  "keys": {
+    "p256dh": "BNmbtO6-SUBosBADSTtC397JqaI_fAGRsbREjc_DgCqBC-Cu2jNebaTyWfAlkbWFJR21cKe-FgUpp9GPB0jMWH4",
+    "auth": "F5RrPEXbdJq_ttCnxo4C1A"
+  }
+}`
+	const expiredGoogle = `{
+  "endpoint": "https://fcm.googleapis.com/fcm/send/cVGTCKN07V8:APA91bHhsj5f00xzGMQVfUTVDdEenLHAPb7uSoiZYpc1UvQla2AwnfSjnnl5ThKhH7Ih7EoQT1FVs9M3HO3Gk2vSIOJIE9VzmlsOWZGWfJt5hkosi_WJALCf31JhFbpo2mdJgKV_o6m1",
+  "expirationTime": null,
+  "keys": {
+    "p256dh": "BBh4fvs0lg2-Grrmi_JRFujJTVunr_pa-hU1RshQfgesz6Y4pcv2tRIrF8XV8b2HU7ok5zo84baayUTSRdQ9Lcg",
+    "auth": "IAv17Jx2W6K2iwwD4jzLRw"
+  }
+}`
+	const expiredFirefox = `{
+  "endpoint": "https://updates.push.services.mozilla.com/wpush/v2/gAAAAABqCo263dWI_rIfY6pY66liCmPlMAz_9GT0SDq1qLlePOltX0Jn5s_ntiYj0D_xt2elklq1L6eALr1hWGZH4CgpGLLsjD1gsNdLRIk-Op8CZ-r3neGslyeShpwE1wDDARFt1fcHTZEQhrr63M9s3baMakCISxLQWYyMsghjyaPkYb67Px8",
+  "expirationTime": null,
+  "keys": {
+    "auth": "6kSx6ui7o_aAgHnN1Wybtg",
+    "p256dh": "BHjzJbon1LmmJfEPr6VAiuguxCIT3P3PGSAObxght2MblDIxE77zk7O5X7GFRxNrdvqhNStOkEVl9TE4W1kWQ2s"
+  }
+}`
+	cases := []struct{ name, json string }{
+		{"apple", expiredApple},
+		{"google", expiredGoogle},
+		{"firefox", expiredFirefox},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			var sub Subscription
+			ensure.Nil(t, json.Unmarshal([]byte(c.json), &sub))
+
+			err := Send(context.Background(), msg, &sub, &config)
+			ensure.NotNil(t, err)
+			_, ok := errors.AsType[*Error](err)
+			ensure.True(t, ok)
+		})
+	}
 }
