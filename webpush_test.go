@@ -259,7 +259,7 @@ func TestSendErrorInvalidAuthSecret(t *testing.T) {
 		&sub,
 		&Config{},
 	)
-	ensure.Err(t, err, regexp.MustCompile("invalid auth"))
+	ensure.Err(t, err, regexp.MustCompile("invalid encoded auth"))
 }
 
 func TestSendErrorInvalidPublicKey(t *testing.T) {
@@ -271,7 +271,7 @@ func TestSendErrorInvalidPublicKey(t *testing.T) {
 		&sub,
 		&Config{},
 	)
-	ensure.Err(t, err, regexp.MustCompile("invalid public key"))
+	ensure.Err(t, err, regexp.MustCompile("invalid encoded public key"))
 }
 
 func TestSendErrorInvalidUrgency(t *testing.T) {
@@ -349,9 +349,9 @@ func TestRealEndpoints(t *testing.T) {
 			ensure.Nil(t, json.Unmarshal([]byte(c.json), &sub))
 
 			err := Send(context.Background(), msg, &sub, &config)
-			ensure.NotNil(t, err)
+			ensure.NotNil(t, err, err)
 			_, ok := errors.AsType[*Error](err)
-			ensure.True(t, ok)
+			ensure.True(t, ok, err)
 		})
 	}
 }

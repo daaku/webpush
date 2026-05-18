@@ -301,64 +301,64 @@ func Send(ctx context.Context, message []byte, s *Subscription, conf *Config) er
 
 	authSecret, err := b64Decode(s.Keys.Auth)
 	if err != nil {
-		return fmt.Errorf("webpush: invalid auth in key: %w", err)
+		return fmt.Errorf("webpush: invalid encoded auth in key: %w", err)
 	}
 
 	userAgentPublicKeyBytes, err := b64Decode(s.Keys.P256dh)
 	if err != nil {
-		return fmt.Errorf("webpush: invalid public key: %w", err)
+		return fmt.Errorf("webpush: invalid encoded public key: %w", err)
 	}
 
 	salt := make([]byte, 16)
 	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
-		return err
+		return fmt.Errorf("webpush: failed to create salt: %w", err)
 	}
 
 	// New Key for this Message
 	appServerPrivateKey, err := ecdh.P256().GenerateKey(rand.Reader)
 	if err != nil {
-		return err
+		return fmt.Errorf("webpush: failed to generate application server key: %w", err)
 	}
 	appServerPublicKeyBytes := appServerPrivateKey.PublicKey().Bytes()
 
 	userAgentPublicKey, err := ecdh.P256().NewPublicKey(userAgentPublicKeyBytes)
 	if err != nil {
-		return err
+		return fmt.Errorf("webpush: invalid user agent public key: %w", err)
 	}
 
 	// Derive Shared Secret for this Message
 	sharedSecret, err := appServerPrivateKey.ECDH(userAgentPublicKey)
 	if err != nil {
-		return err
+		return fmt.Errorf("webpush: failed to derive shared secret: %w", err)
 	}
 
 	// Derive IKM
 	keyInfo := slices.Concat(webPushInfo, userAgentPublicKeyBytes, appServerPublicKeyBytes)
 	ikm, err := hkdfExpand(32, sharedSecret, authSecret, keyInfo)
 	if err != nil {
-		return err
+		return fmt.Errorf("webpush: failed to derive ikm: %w", err)
 	}
 
 	// Derive Content Encryption Key
 	contentEncryptionKey, err := hkdfExpand(16, ikm, salt, contentEncryptionKeyInfo)
 	if err != nil {
-		return err
+		return fmt.Errorf("webpush: failed to derive content encryption key: %w", err)
 	}
 
 	// Derive Nonce
 	nonce, err := hkdfExpand(12, ikm, salt, nonceInfo)
 	if err != nil {
-		return err
+		return fmt.Errorf("webpush: failed to derive nonce: %w", err)
 	}
 
 	// AES + GCM
 	aesCipher, err := aes.NewCipher(contentEncryptionKey)
 	if err != nil {
-		return err
+		return fmt.Errorf("webpush: invalid generated content encryption key: %w", err)
 	}
 	gcm, err := cipher.NewGCM(aesCipher)
 	if err != nil {
-		return err
+		return fmt.Errorf("webpush: invalid content encryption cipher: %w", err)
 	}
 
 	// Single allocation byte slice in which we write the header, message,
@@ -382,7 +382,7 @@ func Send(ctx context.Context, message []byte, s *Subscription, conf *Config) er
 
 	req, err := http.NewRequest("POST", s.Endpoint, bytes.NewReader(record))
 	if err != nil {
-		return err
+		return fmt.Errorf("webpush: invalid endpoint request: %w", err)
 	}
 
 	req.Header.Set("Content-Encoding", "aes128gcm")
