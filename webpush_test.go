@@ -150,102 +150,102 @@ func TestMakeAuthHeaderMissingSubscriber(t *testing.T) {
 
 func TestSendDefaultsSnapshot(t *testing.T) {
 	cryptotest.SetGlobalRandom(t, 42)
-	err := Send(
+	client := &Client{
+		Client: &http.Client{
+			Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+				ensure.DeepEqual(t, r.URL.String(), validSubscription.Endpoint)
+				ensure.DeepEqual(t, r.Header, http.Header{
+					"Authorization":    []string{"vapid t=eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJodHRwczovL3RoZS5wdXNoLnNlcnZlciIsImV4cCI6MTQzMTQ4NjkwMCwic3ViIjoiaHR0cHM6Ly9hcHAuc2VydmVyLyJ9.T8cqkLEXgqcPAT1qLbskBOKP_eA--CEY8UcjeG_m8Ld3pxKSZDtZowcFhKCMLuSPp-1KwXdz2dAkDwALWRDGwQ, k=BBRS0hDoszIXnLVNyR3EbnXnN4glsvb6AusPR9e9L93ZWHeKO4mYTWjpwa5w2xwc0sZBIBIQ-RtwDgE7BZqRWc0"},
+					"Content-Encoding": []string{"aes128gcm"},
+					"Content-Type":     []string{"application/octet-stream"},
+					"Ttl":              []string{"3600"},
+				})
+				body, err := io.ReadAll(r.Body)
+				ensure.Nil(t, err)
+				ensure.DeepEqual(t, base64.RawURLEncoding.EncodeToString(body), "IjAfuNgpeNrwB7BWFJafNAAAEABBBDajlIZjLlvd1IgiJYLExFbuPDgrl6lFBXkIhRULaoMS1bIsXKnermv89uUh9p_9tngznzl2WYcsinUIdf8f2qGJJtpbHUjmLdWNtA7-DjaOwgTXpBQ")
+				return &http.Response{StatusCode: http.StatusCreated}, nil
+			}),
+		},
+		VAPIDKey:        validVapidKey,
+		Subscriber:      validHTTPSSubscriber,
+		TTL:             time.Hour,
+		VAPIDExpiration: goldTime,
+	}
+	err := client.Send(
 		context.Background(),
 		[]byte("Test"),
 		&validSubscription,
-		&Config{
-			Client: &http.Client{
-				Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
-					ensure.DeepEqual(t, r.URL.String(), validSubscription.Endpoint)
-					ensure.DeepEqual(t, r.Header, http.Header{
-						"Authorization":    []string{"vapid t=eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJodHRwczovL3RoZS5wdXNoLnNlcnZlciIsImV4cCI6MTQzMTQ4NjkwMCwic3ViIjoiaHR0cHM6Ly9hcHAuc2VydmVyLyJ9.T8cqkLEXgqcPAT1qLbskBOKP_eA--CEY8UcjeG_m8Ld3pxKSZDtZowcFhKCMLuSPp-1KwXdz2dAkDwALWRDGwQ, k=BBRS0hDoszIXnLVNyR3EbnXnN4glsvb6AusPR9e9L93ZWHeKO4mYTWjpwa5w2xwc0sZBIBIQ-RtwDgE7BZqRWc0"},
-						"Content-Encoding": []string{"aes128gcm"},
-						"Content-Type":     []string{"application/octet-stream"},
-						"Ttl":              []string{"3600"},
-					})
-					body, err := io.ReadAll(r.Body)
-					ensure.Nil(t, err)
-					ensure.DeepEqual(t, base64.RawURLEncoding.EncodeToString(body), "IjAfuNgpeNrwB7BWFJafNAAAEABBBDajlIZjLlvd1IgiJYLExFbuPDgrl6lFBXkIhRULaoMS1bIsXKnermv89uUh9p_9tngznzl2WYcsinUIdf8f2qGJJtpbHUjmLdWNtA7-DjaOwgTXpBQ")
-					return &http.Response{StatusCode: http.StatusCreated}, nil
-				}),
-			},
-			VAPIDKey:        validVapidKey,
-			Subscriber:      validHTTPSSubscriber,
-			TTL:             time.Hour,
-			VAPIDExpiration: goldTime,
-		})
+	)
 	ensure.Nil(t, err)
 }
 
 func TestSendTopic(t *testing.T) {
 	const topic = "a-test"
-	err := Send(
+	client := &Client{
+		Client: &http.Client{
+			Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+				ensure.DeepEqual(t, r.Header.Get("Topic"), topic)
+				return &http.Response{StatusCode: http.StatusCreated}, nil
+			}),
+		},
+		VAPIDKey:   validVapidKey,
+		Subscriber: validHTTPSSubscriber,
+		TTL:        time.Hour,
+		Topic:      topic,
+	}
+	err := client.Send(
 		context.Background(),
 		[]byte("test"),
 		&validSubscription,
-		&Config{
-			Client: &http.Client{
-				Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
-					ensure.DeepEqual(t, r.Header.Get("Topic"), topic)
-					return &http.Response{StatusCode: http.StatusCreated}, nil
-				}),
-			},
-			VAPIDKey:   validVapidKey,
-			Subscriber: validHTTPSSubscriber,
-			TTL:        time.Hour,
-			Topic:      topic,
-		})
+	)
 	ensure.Nil(t, err)
 }
 
 func TestSendUrgency(t *testing.T) {
 	const urgency = UrgencyVeryLow
-	err := Send(
+	client := &Client{
+		Client: &http.Client{
+			Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+				ensure.DeepEqual(t, r.Header.Get("Urgency"), string(UrgencyVeryLow))
+				return &http.Response{StatusCode: http.StatusCreated}, nil
+			}),
+		},
+		VAPIDKey:   validVapidKey,
+		Subscriber: validHTTPSSubscriber,
+		TTL:        time.Hour,
+		Urgency:    urgency,
+	}
+	err := client.Send(
 		context.Background(),
 		[]byte("test"),
 		&validSubscription,
-		&Config{
-			Client: &http.Client{
-				Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
-					ensure.DeepEqual(t, r.Header.Get("Urgency"), string(UrgencyVeryLow))
-					return &http.Response{StatusCode: http.StatusCreated}, nil
-				}),
-			},
-			VAPIDKey:   validVapidKey,
-			Subscriber: validHTTPSSubscriber,
-			TTL:        time.Hour,
-			Urgency:    urgency,
-		})
+	)
 	ensure.Nil(t, err)
 }
 
 func TestSendErrorTooLongCustomRecordSize(t *testing.T) {
-	err := Send(
+	err := (&Client{RecordSize: 1}).Send(
 		context.Background(),
 		[]byte("12"),
 		&validSubscription,
-		&Config{RecordSize: 1},
 	)
 	ensure.Err(t, err, regexp.MustCompile("too long"))
 }
 
 func TestSendErrorTooLongDefaultRecordSize(t *testing.T) {
-	err := Send(
+	err := (&Client{}).Send(
 		context.Background(),
 		bytes.Repeat([]byte("1"), maxRecordSize),
 		&validSubscription,
-		&Config{},
 	)
 	ensure.Err(t, err, regexp.MustCompile("too long"))
 }
 
 func TestSendErrorEmptySubscription(t *testing.T) {
-	err := Send(
+	err := (&Client{}).Send(
 		context.Background(),
 		[]byte("1"),
 		&Subscription{},
-		&Config{},
 	)
 	ensure.Err(t, err, regexp.MustCompile("invalid subscription"))
 }
@@ -253,11 +253,10 @@ func TestSendErrorEmptySubscription(t *testing.T) {
 func TestSendErrorInvalidAuthSecret(t *testing.T) {
 	sub := validSubscription
 	sub.Keys.Auth = "{}"
-	err := Send(
+	err := (&Client{}).Send(
 		context.Background(),
 		[]byte("1"),
 		&sub,
-		&Config{},
 	)
 	ensure.Err(t, err, regexp.MustCompile("invalid encoded auth"))
 }
@@ -265,26 +264,26 @@ func TestSendErrorInvalidAuthSecret(t *testing.T) {
 func TestSendErrorInvalidPublicKey(t *testing.T) {
 	sub := validSubscription
 	sub.Keys.P256dh = "{}"
-	err := Send(
+	err := (&Client{}).Send(
 		context.Background(),
 		[]byte("1"),
 		&sub,
-		&Config{},
 	)
 	ensure.Err(t, err, regexp.MustCompile("invalid encoded public key"))
 }
 
 func TestSendErrorInvalidUrgency(t *testing.T) {
-	err := Send(
+	client := &Client{
+		VAPIDKey:   validVapidKey,
+		Subscriber: validHTTPSSubscriber,
+		TTL:        time.Hour,
+		Urgency:    Urgency("invalid"),
+	}
+	err := client.Send(
 		context.Background(),
 		[]byte("test"),
 		&validSubscription,
-		&Config{
-			VAPIDKey:   validVapidKey,
-			Subscriber: validHTTPSSubscriber,
-			TTL:        time.Hour,
-			Urgency:    Urgency("invalid"),
-		})
+	)
 	ensure.Err(t, err, regexp.MustCompile("invalid urgency"))
 }
 
@@ -292,7 +291,7 @@ func TestRealEndpoints(t *testing.T) {
 	if os.Getenv("REAL_ENDPOINTS") == "" {
 		t.Skip("skipping testing real endpoints")
 	}
-	config := Config{
+	client := Client{
 		Client:     http.DefaultClient,
 		Subscriber: "https://bento.daaku.org/",
 		// TODO: using an invalid vapid key because the apple subscription isn't
@@ -350,7 +349,7 @@ func TestRealEndpoints(t *testing.T) {
 			var sub Subscription
 			ensure.Nil(t, json.Unmarshal([]byte(c.json), &sub))
 
-			err := Send(context.Background(), msg, &sub, &config)
+			err := client.Send(context.Background(), msg, &sub)
 			ensure.NotNil(t, err, err)
 			_, ok := errors.AsType[*Error](err)
 			ensure.True(t, ok, err)

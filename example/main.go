@@ -94,12 +94,13 @@ func run() error {
 			msg, _ := json.Marshal(map[string]any{
 				"title": "Test push from WebPush Example",
 			})
-			err := webpush.Send(context.Background(), msg, &sub, &webpush.Config{
+			client := &webpush.Client{
 				Client:     http.DefaultClient,
 				VAPIDKey:   vapidKey,
 				Subscriber: "https://github.com/daaku/webpush",
 				TTL:        time.Hour,
-			})
+			}
+			err := client.Send(context.Background(), msg, &sub)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "webpush.Send error:", err)
 			}

@@ -249,8 +249,8 @@ func hkdfExpand(length int, secret, salt, info []byte) ([]byte, error) {
 	return key, err
 }
 
-// Config specifies required and optional aspects for sending a Push Notification.
-type Config struct {
+// Client specifies required and optional aspects for sending a Push Notification.
+type Client struct {
 	Client          *http.Client      // Required http.Client.
 	VAPIDKey        *ecdsa.PrivateKey // Required VAPID Private Key.
 	Subscriber      string            // Required Subscriber, https URL or mailto: email address.
@@ -282,8 +282,8 @@ var (
 // Send a Push Notification to a Subscription.
 // Send will return an error of type Error if the Endpoint returns a HTTP
 // response with a status code outside the 200-299 range.
-func Send(ctx context.Context, message []byte, s *Subscription, conf *Config) error {
-	recordSize := conf.RecordSize
+func (c *Client) Send(ctx context.Context, message []byte, s *Subscription) error {
+	recordSize := c.RecordSize
 	if recordSize == 0 {
 		recordSize = maxRecordSize
 	}
@@ -387,27 +387,27 @@ func Send(ctx context.Context, message []byte, s *Subscription, conf *Config) er
 
 	req.Header.Set("Content-Encoding", "aes128gcm")
 	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("TTL", strconv.Itoa(int(conf.TTL.Seconds())))
+	req.Header.Set("TTL", strconv.Itoa(int(c.TTL.Seconds())))
 
-	if conf.Topic != "" {
-		req.Header.Set("Topic", conf.Topic)
+	if c.Topic != "" {
+		req.Header.Set("Topic", c.Topic)
 	}
-	if conf.Urgency != "" {
-		if !conf.Urgency.isValid() {
-			return fmt.Errorf("webpush: invalid urgency %q", conf.Urgency)
+	if c.Urgency != "" {
+		if !c.Urgency.isValid() {
+			return fmt.Errorf("webpush: invalid urgency %q", c.Urgency)
 		}
-		req.Header.Set("Urgency", string(conf.Urgency))
+		req.Header.Set("Urgency", string(c.Urgency))
 	}
 
-	expiration := conf.VAPIDExpiration
+	expiration := c.VAPIDExpiration
 	if expiration.IsZero() {
 		expiration = time.Now().Add(time.Hour * 12)
 	}
 
 	authHeader, err := makeAuthHeader(
 		s.Endpoint,
-		conf.Subscriber,
-		conf.VAPIDKey,
+		c.Subscriber,
+		c.VAPIDKey,
 		expiration,
 	)
 	if err != nil {
@@ -415,7 +415,7 @@ func Send(ctx context.Context, message []byte, s *Subscription, conf *Config) er
 	}
 	req.Header.Set("Authorization", authHeader)
 
-	res, err := conf.Client.Do(req)
+	res, err := c.Client.Do(req)
 	if err != nil {
 		return fmt.Errorf("webpush: error making request to subscription endpoint: %w", err)
 	}
